@@ -1,0 +1,13 @@
+Tiến trình chính (n8n service): Xử lý các webhook, giao diện người dùng, và đưa các lần thực thi workflow vào hàng đợi (queue - ở đây là Redis).
+Tiến trình worker (n8n-worker service): Lấy các lần thực thi từ hàng đợi và thực sự chạy chúng.
+Việc có nhiều n8n-worker cho phép:
+Thực thi song song: Nhiều workflow có thể chạy cùng một lúc trên các worker khác nhau.
+Tăng thông lượng: Hệ thống có thể xử lý nhiều workflow hơn trong cùng một khoảng thời gian.
+Cải thiện độ tin cậy: Nếu một worker gặp sự cố, các worker khác vẫn có thể tiếp tục xử lý các tác vụ trong hàng đợi.
+Trong file docker-compose.yml hiện tại chỉ định nghĩa một service n8n-worker. Tuy nhiên, bạn có thể dễ dàng scale (mở rộng) số lượng worker bằng cách sử dụng lệnh docker-compose up --scale n8n-worker=<số lượng> (ví dụ: --scale n8n-worker=3 để chạy 3 worker) mà không cần thay đổi file cấu hình. Cấu trúc x-shared giúp dễ dàng định nghĩa và quản lý các worker này.
+
+
+curl -F "url=https://ja-want-memorial-workflow.trycloudflare.com" https://api.telegram.org/bot8061864385:AAF8L-S9mQ_H03wwLKhC8_YLIame9jjSEZQ/setWebhook
+
+
+curl -F "url=https://ja-want-memorial-workflow.trycloudflare.com" https://api.telegram.org/bot8061864385:AAF8L-S9mQ_H03wwLKhC8_YLIame9jjSEZQ/setWebhook
