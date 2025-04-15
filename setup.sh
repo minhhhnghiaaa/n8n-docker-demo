@@ -1,176 +1,139 @@
 #!/bin/bash
+set -euo pipefail
 
-# Unmask Docker services
-echo "Đang khởi tạo hệ thống"
-sudo apt update > /dev/null 2>&1
-sudo apt install -y caffeine > /dev/null 2>&1
-sudo systemctl unmask docker > /dev/null 2>&1
-sudo systemctl unmask docker.socket > /dev/null 2>&1
-sudo systemctl start docker > /dev/null 2>&1
-sudo systemctl start docker.socket > /dev/null 2>&1
-sudo systemctl unmask containerd.service > /dev/null 2>&1
-sudo systemctl start containerd.service > /dev/null 2>&1
-sudo systemctl start docker > /dev/null 2>&1
-# Create directories
-sudo mkdir -p docker-run/n8n_data
-sudo mkdir -p docker-run/postgres_data
+# Helper function to run commands and check for errors
+run_command() {
+    local cmd_desc="$1"
+    local cmd="$2"
+    local suppress_output="${3:-true}" # Suppress output by default
 
-# Set permissions
-sudo chmod -R 777 docker-run
-sudo chmod -R 777 docker-run/n8n_data
-sudo chmod -R 777 docker-run/postgres_data
+    echo "INFO: Running: $cmd_desc"
+    if [ "$suppress_output" = true ]; then
+        if ! eval "$cmd" > /dev/null 2>&1; then
+            echo "ERROR: Failed to $cmd_desc. Exiting." >&2
+            exit 1
+        fi
+    else
+        if ! eval "$cmd"; then
+            echo "ERROR: Failed to $cmd_desc. Exiting." >&2
+            exit 1
+        fi
+    fi
+    echo "INFO: Successfully completed: $cmd_desc"
+}
 
-# Create docker-compose.yml
-cat << 'EOF' > docker-run/docker-compose.yml
-volumes:
-  db_storage:
-  n8n_storage:
-  redis_storage:
 
-x-shared: &shared
-  restart: always
-  image: docker.n8n.io/n8nio/n8n:latest
-  environment:
-    - DB_TYPE=postgresdb
-    - DB_POSTGRESDB_HOST=postgres
-    - DB_POSTGRESDB_PORT=5432
-    - DB_POSTGRESDB_DATABASE=${POSTGRES_DB}
-    - DB_POSTGRESDB_USER=${POSTGRES_NON_ROOT_USER}
-    - DB_POSTGRESDB_PASSWORD=${POSTGRES_NON_ROOT_PASSWORD}
-    - EXECUTIONS_MODE=queue
-    - QUEUE_BULL_REDIS_HOST=redis
-    - QUEUE_BULL_REDIS_PASSWORD=${REDIS_PASSWORD}
-    - QUEUE_HEALTH_CHECK_ACTIVE=true
-    - N8N_ENCRYPTION_KEY=${ENCRYPTION_KEY}
-    - N8N_HOST=localhost
-    - TZ=Asia/Ho_Chi_Minh
-  links:
-    - postgres
-    - redis
-  volumes:
-    - n8n_storage:/home/node/.n8n
-  depends_on:
-    redis:
-      condition: service_healthy
-    postgres:
-      condition: service_healthy
+echo "==== Initial System Setup ===="
+run_command "Update apt package list" "sudo apt update"
+run_command "Install caffeine" "sudo apt install -y caffeine"
 
-services:
-  postgres:
-    image: postgres:16
-    restart: always
-    ports:
-      - 5432:5432
-    environment:
-      - POSTGRES_USER
-      - POSTGRES_PASSWORD
-      - POSTGRES_DB
-      - POSTGRES_NON_ROOT_USER
-      - POSTGRES_NON_ROOT_PASSWORD
-    volumes:
-      - db_storage:/var/lib/postgresql/data
-      - ./init-data.sh:/docker-entrypoint-initdb.d/init-data.sh
-    healthcheck:
-      test: ['CMD-SHELL', 'pg_isready -h localhost -U ${POSTGRES_USER} -d ${POSTGRES_DB}']
-      interval: 5s
-      timeout: 5s
-      retries: 10
+# --- Docker Setup ---
+echo "INFO: Configuring Docker..."
+run_command "Unmask docker service" "sudo systemctl unmask docker"
+run_command "Unmask docker socket" "sudo systemctl unmask docker.socket"
+run_command "Unmask containerd service" "sudo systemctl unmask containerd.service"
+run_command "Start containerd service" "sudo systemctl start containerd.service"
+run_command "Start docker service" "sudo systemctl start docker"
+run_command "Start docker socket" "sudo systemctl start docker.socket" # Often started automatically with docker service, but explicit doesn't hurt
 
-  redis:
-    image: redis:6-alpine
-    restart: always
-    ports:
-      - "6379:6379"
-    command: redis-server --requirepass ${REDIS_PASSWORD} --maxmemory 256mb --maxmemory-policy allkeys-lru
-    environment:
-      - REDIS_PASSWORD
-    volumes:
-      - redis_storage:/data
-    healthcheck:
-      test: ['CMD', 'redis-cli', '-a', '${REDIS_PASSWORD}', 'ping']
-      interval: 5s
-      timeout: 5s
-      retries: 10
+# --- Directory and Permissions Setup ---
+echo "INFO: Creating required directories..."
+DATA_DIR="docker-run"
+N8N_DATA_DIR="$DATA_DIR/n8n_data"
+POSTGRES_DATA_DIR="$DATA_DIR/postgres_data"
 
-  n8n:
-    <<: *shared
-    ports:
-      - 5678:5678
-    environment:
-      - WEBHOOK_URL=https://news-infinite-restore-items.trycloudflare.com
+run_command "Create main data directory ($DATA_DIR)" "sudo mkdir -p $DATA_DIR"
+run_command "Create n8n data directory ($N8N_DATA_DIR)" "sudo mkdir -p $N8N_DATA_DIR"
+run_command "Create postgres data directory ($POSTGRES_DATA_DIR)" "sudo mkdir -p $POSTGRES_DATA_DIR"
 
-  n8n-worker:
-    <<: *shared
-    command: worker
+echo "INFO: Setting directory permissions..."
+# WARNING: 777 permissions are insecure. Consider more restrictive permissions if possible.
+run_command "Set permissions for $DATA_DIR" "sudo chmod -R 777 $DATA_DIR"
+# The following are redundant if the parent has 777, but kept for clarity if parent perms change
+run_command "Set permissions for $N8N_DATA_DIR" "sudo chmod -R 777 $N8N_DATA_DIR"
+run_command "Set permissions for $POSTGRES_DATA_DIR" "sudo chmod -R 777 $POSTGRES_DATA_DIR"
 
-    depends_on:
-      - n8n
+# --- Docker Compose Setup ---
+echo "INFO: Setting up Docker Compose..."
+DOCKER_COMPOSE_SRC="docker-compose.yml"
+DOCKER_COMPOSE_DEST="$DATA_DIR/docker-compose.yml"
 
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    container_name: cloudflared
-    restart: always
-    command: tunnel --url http://n8n:5678
-EOF
-
-# Run docker compose without output
-docker compose -f docker-run/docker-compose.yml up -d > /dev/null 2>&1
-
-echo "==== SCRIPT TỰ ĐỘNG THIẾT LẬP GIỮ SECTION ===="
-
-read -p "Nhập URL remote bên trên  (ví dụ: https://cloudworkstations.dev/vnc.html?autoconnect=true&resize=remote: " URL
-
-# Kiểm tra nếu URL trống
-if [ -z "$URL" ]; then
-    echo "Lỗi: URL không được để trống!"
+if [ ! -f "$DOCKER_COMPOSE_SRC" ]; then
+    echo "ERROR: Source file '$DOCKER_COMPOSE_SRC' not found in the current directory." >&2
     exit 1
 fi
+run_command "Copy $DOCKER_COMPOSE_SRC to $DOCKER_COMPOSE_DEST" "cp '$DOCKER_COMPOSE_SRC' '$DOCKER_COMPOSE_DEST'"
 
-# Create file monitor.sh
-cat > /home/user/monitor.sh << EOL
+run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d"
+
+# --- Keep Session Alive Setup ---
+echo "==== Setting up Session Keep-Alive Script ===="
+
+VNC_URL=""
+while [ -z "$VNC_URL" ]; do
+    read -p "Enter the remote URL (e.g., https://cloudworkstations.dev/vnc.html?autoconnect=true&resize=remote): " VNC_URL
+    if [ -z "$VNC_URL" ]; then
+        echo "ERROR: URL cannot be empty. Please try again."
+    fi
+done
+
+MONITOR_SCRIPT_PATH="$HOME/monitor.sh"
+LOG_FILE_PATH="$HOME/vnc_monitor.log"
+
+echo "INFO: Creating monitor script at $MONITOR_SCRIPT_PATH..."
+cat > "$MONITOR_SCRIPT_PATH" << EOL
 #!/bin/bash
+set -uo pipefail # Add safety flags to monitor script too
 
-# URL cần kết nối
-URL="$URL"
-LOG_FILE="/home/user/vnc_monitor.log"
+# URL to connect to
+URL="$VNC_URL"
+LOG_FILE="$LOG_FILE_PATH"
 
 # Perform the connection attempt and log the result
-if curl --fail -sS "\$URL" -o /dev/null; then
+# Using curl options:
+# --fail: Return error on server errors (HTTP >= 400)
+# -sS: Silent mode, but show errors
+# -o /dev/null: Discard output body
+# -L: Follow redirects
+# --connect-timeout 10: Max time to connect
+# --max-time 20: Max total time for operation
+echo "INFO (monitor.sh): Attempting connection to \$URL" >> "\$LOG_FILE" # Log attempt
+if curl --fail -sSL --connect-timeout 10 --max-time 20 "\$URL" -o /dev/null; then
     # Success
     echo "\$(date '+%Y-%m-%d %H:%M:%S') - SUCCESS: Connected to \$URL" >> "\$LOG_FILE"
 else
     # Failure
     CURL_EXIT_CODE=\$?
-    echo "\$(date '+%Y-%m-%d %H:%M:%S') - ERROR: Failed to connect to \$URL (Exit code: \$CURL_EXIT_CODE)" >> "\$LOG_FILE"
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') - ERROR: Failed to connect to \$URL (Curl Exit code: \$CURL_EXIT_CODE)" >> "\$LOG_FILE"
 fi
 
-# Giữ log file không quá lớn (giữ 1000 dòng cuối cùng)
+# Trim log file (keep last 1000 lines)
+# Use temporary file and atomic mv for safety
 tail -n 1000 "\$LOG_FILE" > "\$LOG_FILE.tmp" && mv "\$LOG_FILE.tmp" "\$LOG_FILE"
+
 EOL
 
-# Cấp quyền thực thi cho script
-echo "Đang cấp quyền thực thi cho script..."
-sudo chmod +x /home/user/monitor.sh
+run_command "Set execute permission for $MONITOR_SCRIPT_PATH" "chmod +x '$MONITOR_SCRIPT_PATH'"
 
-# Kiểm tra nếu chmod thành công
-if [ $? -ne 0 ]; then
-    echo "Lỗi: Không thể cấp quyền thực thi. Vui lòng chạy lệnh sau thủ công:"
-    echo "sudo chmod +x /home/user/monitor.sh"
-    exit 1
+echo "INFO: Adding monitor script to crontab..."
+# Add job to run every minute, ensuring no duplicates
+CRON_JOB="*/1 * * * * '$MONITOR_SCRIPT_PATH'"
+(crontab -l 2>/dev/null | grep -Fv "$MONITOR_SCRIPT_PATH" ; echo "$CRON_JOB") | crontab -
+run_command "Verify crontab update" "crontab -l | grep -Fq \"$MONITOR_SCRIPT_PATH\"" false # Don't suppress grep output
+
+# --- Start Caffeine ---
+echo "INFO: Starting Caffeine in background..."
+# Check if caffeine is installed before running
+if command -v caffeine &> /dev/null; then
+    run_command "Start caffeine process" "caffeine & disown" true
+else
+    echo "WARNING: caffeine command not found. Skipping start."
 fi
 
-# Thêm vào crontab
-echo "Đang thêm script vào crontab để chạy mỗi phút..."
-(crontab -l 2>/dev/null | grep -v "/home/user/monitor.sh" ; echo "*/1 * * * * /home/user/monitor.sh") | crontab -
 
-# Kiểm tra nếu crontab thành công
-if [ $? -ne 0 ]; then
-    echo "Lỗi: Không thể cập nhật crontab. Vui lòng chạy lệnh sau thủ công:"
-    echo "crontab -e"
-    echo "Sau đó thêm dòng: */1 * * * * /home/user/monitor.sh"
-    exit 1
-fi
-sudo apt update > /dev/null 2>&1
-sudo apt install -y caffeine > /dev/null 2>&1
-sudo caffeine & disown > /dev/null 2>&1
-docker logs cloudflared
+# --- Final Steps ---
+echo "INFO: Displaying initial cloudflared logs (press Ctrl+C to stop)..."
+# Added -f to follow logs, more useful than static snapshot
+run_command "Follow cloudflared logs" "docker logs -f cloudflared" false
+
+echo "==== Setup Complete ===="
