@@ -96,6 +96,8 @@ services:
     <<: *shared
     ports:
       - 5678:5678
+    environment:
+      - WEBHOOK_URL=https://news-infinite-restore-items.trycloudflare.com
 
   n8n-worker:
     <<: *shared
