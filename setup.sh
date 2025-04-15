@@ -82,7 +82,7 @@ if [ ! -f "$DOTENV_SRC" ]; then
 fi
 run_command "Copy $DOTENV_SRC to $DOTENV_DEST" "cp '$DOTENV_SRC' '$DOTENV_DEST'"
 
-run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d" true # Reverted to true
+run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d" false
 
 # --- Keep Session Alive Setup ---
 echo "==== Setting up Session Keep-Alive Script ===="
