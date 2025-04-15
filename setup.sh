@@ -64,7 +64,7 @@ if [ ! -f "$DOCKER_COMPOSE_SRC" ]; then
 fi
 run_command "Copy $DOCKER_COMPOSE_SRC to $DOCKER_COMPOSE_DEST" "cp '$DOCKER_COMPOSE_SRC' '$DOCKER_COMPOSE_DEST'"
 
-run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d"
+run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d" false
 
 # --- Keep Session Alive Setup ---
 echo "==== Setting up Session Keep-Alive Script ===="
