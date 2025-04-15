@@ -57,14 +57,32 @@ run_command "Set permissions for $POSTGRES_DATA_DIR" "sudo chmod -R 777 $POSTGRE
 echo "INFO: Setting up Docker Compose..."
 DOCKER_COMPOSE_SRC="docker-compose.yml"
 DOCKER_COMPOSE_DEST="$DATA_DIR/docker-compose.yml"
+DOTENV_SRC=".env"
+DOTENV_DEST="$DATA_DIR/.env"
 
+# Check for docker-compose.yml
 if [ ! -f "$DOCKER_COMPOSE_SRC" ]; then
     echo "ERROR: Source file '$DOCKER_COMPOSE_SRC' not found in the current directory." >&2
     exit 1
 fi
 run_command "Copy $DOCKER_COMPOSE_SRC to $DOCKER_COMPOSE_DEST" "cp '$DOCKER_COMPOSE_SRC' '$DOCKER_COMPOSE_DEST'"
 
-run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d" false
+# Check for .env file
+if [ ! -f "$DOTENV_SRC" ]; then
+    echo "ERROR: '.env' file not found in the current directory." >&2
+    echo "Please create a '.env' file with the following variables:" >&2
+    echo "  POSTGRES_DB"
+    echo "  POSTGRES_USER"
+    echo "  POSTGRES_PASSWORD"
+    echo "  POSTGRES_NON_ROOT_USER"
+    echo "  POSTGRES_NON_ROOT_PASSWORD"
+    echo "  REDIS_PASSWORD"
+    echo "  ENCRYPTION_KEY" >&2
+    exit 1
+fi
+run_command "Copy $DOTENV_SRC to $DOTENV_DEST" "cp '$DOTENV_SRC' '$DOTENV_DEST'"
+
+run_command "Run docker compose up -d" "docker compose -f '$DOCKER_COMPOSE_DEST' up -d" true # Reverted to true
 
 # --- Keep Session Alive Setup ---
 echo "==== Setting up Session Keep-Alive Script ===="
