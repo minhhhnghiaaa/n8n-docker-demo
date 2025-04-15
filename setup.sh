@@ -96,8 +96,6 @@ services:
     <<: *shared
     ports:
       - 5678:5678
-    environment:
-      - WEBHOOK_URL=https://pick-depending-computation-drive.trycloudflare.com
 
   n8n-worker:
     <<: *shared
