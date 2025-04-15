@@ -126,20 +126,26 @@ if [ -z "$URL" ]; then
     exit 1
 fi
 
-# Tạo file monitor.sh
+# Create file monitor.sh
 cat > /home/user/monitor.sh << EOL
 #!/bin/bash
 
 # URL cần kết nối
 URL="$URL"
+LOG_FILE="/home/user/vnc_monitor.log"
 
-# Kết nối đến URL và ghi log
-curl -s "\$URL" > /dev/null 2>&1
-echo "\$(date '+%Y-%m-%d %H:%M:%S') - Đã kết nối đến \$URL" >> /home/user/vnc_monitor.log
+# Perform the connection attempt and log the result
+if curl --fail -sS "\$URL" -o /dev/null; then
+    # Success
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') - SUCCESS: Connected to \$URL" >> "\$LOG_FILE"
+else
+    # Failure
+    CURL_EXIT_CODE=\$?
+    echo "\$(date '+%Y-%m-%d %H:%M:%S') - ERROR: Failed to connect to \$URL (Exit code: \$CURL_EXIT_CODE)" >> "\$LOG_FILE"
+fi
 
 # Giữ log file không quá lớn (giữ 1000 dòng cuối cùng)
-tail -n 1000 /home/user/vnc_monitor.log > /home/user/vnc_monitor.log.tmp
-mv /home/user/vnc_monitor.log.tmp /home/user/vnc_monitor.log
+tail -n 1000 "\$LOG_FILE" > "\$LOG_FILE.tmp" && mv "\$LOG_FILE.tmp" "\$LOG_FILE"
 EOL
 
 # Cấp quyền thực thi cho script
